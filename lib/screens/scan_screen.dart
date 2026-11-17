@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import '../app_state.dart';
 import '../odoo/models.dart';
 import 'adjust_screen.dart';
+import '../scan_feedback.dart';
 import 'app_drawer.dart';
+import 'camera_scan_screen.dart';
 
 String fmtQty(double v) => v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(3).replaceFirst(RegExp(r'0+$'), '');
 
@@ -37,6 +39,7 @@ class _ScanScreenState extends State<ScanScreen> {
     try {
       final r = await widget.state.client.lookup(code, wh);
       if (r != null) {
+        await ScanFeedback.found(widget.state.soundEnabled);
         setState(() => _item = r);
       } else {
         final hits = await widget.state.client.searchByName(code, wh);
@@ -44,6 +47,7 @@ class _ScanScreenState extends State<ScanScreen> {
           final one = await widget.state.client.byProductId(hits.first.id, wh);
           setState(() => _item = one);
         } else {
+          if (hits.isEmpty) await ScanFeedback.notFound(widget.state.soundEnabled);
           setState(() {
             _item = null;
             _hits = hits;
@@ -57,6 +61,36 @@ class _ScanScreenState extends State<ScanScreen> {
       if (mounted) setState(() => _busy = false);
       _focus.requestFocus();
     }
+  }
+
+  Future<void> _camera() async {
+    final code = await Navigator.of(context).push<String>(MaterialPageRoute(builder: (_) => const CameraScanScreen()));
+    if (code != null) await _scan(code);
+  }
+
+  void _otherStores() {
+    final it = _item!;
+    showModalBottomSheet(
+      context: context,
+      builder: (_) => FutureBuilder<List<StoreStock>>(
+        future: widget.state.client.stockInAllStores(it.productId, widget.state.warehouses),
+        builder: (context, snap) {
+          if (snap.connectionState != ConnectionState.done) {
+            return const SizedBox(height: 160, child: Center(child: CircularProgressIndicator()));
+          }
+          if (snap.hasError) return Padding(padding: const EdgeInsets.all(16), child: Text('${snap.error}'));
+          return ListView(shrinkWrap: true, children: [
+            ListTile(title: Text(it.name, style: Theme.of(context).textTheme.titleMedium), subtitle: const Text('Stock in every store')),
+            for (final x in snap.data!)
+              ListTile(
+                dense: true,
+                title: Text(x.warehouse),
+                trailing: Text('${fmtQty(x.qty)} ${it.uom}', style: const TextStyle(fontWeight: FontWeight.bold)),
+              ),
+          ]);
+        },
+      ),
+    );
   }
 
   Future<void> _openHit(ProductHit h) async {
@@ -125,6 +159,11 @@ class _ScanScreenState extends State<ScanScreen> {
               helperText: 'Tap the keyboard icon to type a name',
               border: const OutlineInputBorder(),
               suffixIcon: Row(mainAxisSize: MainAxisSize.min, children: [
+                IconButton(
+                  tooltip: 'Camera scan',
+                  icon: const Icon(Icons.photo_camera),
+                  onPressed: _camera,
+                ),
                 IconButton(
                   tooltip: 'Search',
                   icon: const Icon(Icons.search),
@@ -199,6 +238,12 @@ class _ScanScreenState extends State<ScanScreen> {
                 ]),
               ),
             ),
+            OutlinedButton.icon(
+              onPressed: _otherStores,
+              icon: const Icon(Icons.storefront),
+              label: const Padding(padding: EdgeInsets.all(8), child: Text('Other stores')),
+            ),
+            const SizedBox(height: 8),
             FilledButton.icon(
               onPressed: (it.tracked || !widget.state.canAdjust) ? null : _adjust,
               icon: const Icon(Icons.edit),

@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'config.dart';
+import 'count/count_session.dart';
 import 'odoo/models.dart';
 import 'odoo/odoo_client.dart';
 
@@ -15,6 +16,8 @@ class AppState extends ChangeNotifier {
   int? lastWarehouseId;
   String? savedDb, savedLogin;
   AccessRights rights = const AccessRights();
+  bool soundEnabled = true;
+  CountSession? count;
   final List<String> history = [];
 
   /// Updating is allowed unless Odoo says this user is not an Inventory Administrator.
@@ -25,6 +28,8 @@ class AppState extends ChangeNotifier {
     savedDb = p.getString('db');
     savedLogin = p.getString('login');
     lastWarehouseId = p.getInt('warehouse');
+    soundEnabled = p.getBool('sound') ?? true;
+    count = CountSession.decode(p.getString('count'));
     final key = await _secure.read(key: 'key');
     if (savedDb != null && savedLogin != null && key != null) {
       try {
@@ -80,6 +85,23 @@ class AppState extends ChangeNotifier {
     loggedIn = false;
     warehouse = null;
     notifyListeners();
+  }
+
+  Future<void> setSound(bool v) async {
+    soundEnabled = v;
+    final p = await SharedPreferences.getInstance();
+    await p.setBool('sound', v);
+    notifyListeners();
+  }
+
+  /// Saves (or clears) the stock count in progress so it survives an app restart.
+  Future<void> saveCount() async {
+    final p = await SharedPreferences.getInstance();
+    if (count == null) {
+      await p.remove('count');
+    } else {
+      await p.setString('count', count!.encode());
+    }
   }
 
   void addHistory(String line) {

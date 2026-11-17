@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../app_state.dart';
 import 'about_screen.dart';
+import 'count_screen.dart';
+import 'dashboard_screen.dart';
 import 'settings_screen.dart';
 
 /// The 3-line menu.
@@ -19,6 +21,24 @@ class AppDrawer extends StatelessWidget {
             accountEmail: Text('Store: ${state.warehouse?.name ?? '-'}'),
             currentAccountPicture: const CircleAvatar(child: Icon(Icons.person, size: 36)),
           ),
+          ListTile(
+            leading: const Icon(Icons.fact_check),
+            title: const Text('Stock count'),
+            subtitle: state.count != null ? Text('In progress: ${state.count!.name}') : null,
+            onTap: () {
+              nav.pop();
+              nav.push(MaterialPageRoute(builder: (_) => CountScreen(state: state)));
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.insights),
+            title: const Text('Consumption dashboard'),
+            onTap: () {
+              nav.pop();
+              nav.push(MaterialPageRoute(builder: (_) => DashboardScreen(state: state)));
+            },
+          ),
+          const Divider(),
           ListTile(
             leading: const Icon(Icons.settings),
             title: const Text('Settings'),

@@ -25,6 +25,17 @@ class SettingsScreen extends StatelessWidget {
           },
         ),
         const Divider(),
+        _header(context, 'Scanning'),
+        ListenableBuilder(
+          listenable: state,
+          builder: (_, __) => SwitchListTile(
+            secondary: const Icon(Icons.volume_up),
+            title: const Text('Sound and vibration on scan'),
+            value: state.soundEnabled,
+            onChanged: state.setSound,
+          ),
+        ),
+        const Divider(),
         _header(context, 'Account'),
         ListTile(leading: const Icon(Icons.person), title: Text(state.client.userName ?? '-'), subtitle: Text(state.savedLogin ?? '')),
         ListTile(leading: const Icon(Icons.storage), title: Text(state.savedDb ?? '-'), subtitle: const Text('Database')),
