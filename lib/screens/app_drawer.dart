@@ -3,6 +3,9 @@ import '../app_state.dart';
 import 'about_screen.dart';
 import 'count_screen.dart';
 import 'dashboard_screen.dart';
+import 'odoo_menu_screen.dart';
+import '../config.dart';
+import '../odoo/generic.dart';
 import 'settings_screen.dart';
 
 /// The 3-line menu.
@@ -38,6 +41,27 @@ class AppDrawer extends StatelessWidget {
               nav.push(MaterialPageRoute(builder: (_) => DashboardScreen(state: state)));
             },
           ),
+          ListTile(
+            leading: const Icon(Icons.bakery_dining),
+            title: const Text('Caravan Bakery Suite'),
+            onTap: () async {
+              final messenger = ScaffoldMessenger.of(context);
+              nav.pop();
+              try {
+                final roots = await state.client.findRootMenus(kBakeryMenuKeywords);
+                if (roots.isEmpty) {
+                  messenger.showSnackBar(const SnackBar(content: Text('No bakery menu found for your Odoo user.')));
+                  return;
+                }
+                nav.push(MaterialPageRoute(
+                    builder: (_) => roots.length == 1
+                        ? OdooMenuScreen(state: state, menuId: roots.first.id, title: roots.first.name)
+                        : _RootPicker(state: state, roots: roots)));
+              } catch (e) {
+                messenger.showSnackBar(SnackBar(content: Text('$e')));
+              }
+            },
+          ),
           const Divider(),
           ListTile(
             leading: const Icon(Icons.settings),
@@ -69,4 +93,25 @@ class AppDrawer extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Shown only if several top-level menus match the bakery keywords.
+class _RootPicker extends StatelessWidget {
+  final AppState state;
+  final List<MenuNode> roots;
+  const _RootPicker({required this.state, required this.roots});
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(title: const Text('Caravan Bakery Suite')),
+        body: ListView(children: [
+          for (final r in roots)
+            ListTile(
+              leading: const Icon(Icons.folder_open),
+              title: Text(r.name),
+              onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => OdooMenuScreen(state: state, menuId: r.id, title: r.name))),
+            ),
+        ]),
+      );
 }

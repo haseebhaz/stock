@@ -41,6 +41,10 @@ class OdooClient {
     return body['result'];
   }
 
+  /// Generic call used by the Odoo-menu browser (lib/odoo/generic.dart).
+  Future<dynamic> exec(String model, String method, List args, [Map<String, dynamic>? kwargs]) =>
+      _exec(model, method, args, kwargs);
+
   Future<dynamic> _exec(String model, String method, List args,
       [Map<String, dynamic>? kwargs]) {
     return _call('object', 'execute_kw',
