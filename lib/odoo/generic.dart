@@ -108,16 +108,20 @@ extension GenericApi on OdooClient {
           MenuNode(m['id'], m['name'], m['action'] is String ? m['action'] : null, (m['child_id'] as List).isNotEmpty)
       ];
 
-  /// Top-level menus whose name contains one of [keywords]. Odoo already hides
-  /// menus the logged-in user has no access to.
-  Future<List<MenuNode>> findRootMenus(List<String> keywords) async {
+  /// Every top-level menu the logged-in user may see (Odoo hides the others).
+  Future<List<MenuNode>> rootMenus() async {
     final r = await exec('ir.ui.menu', 'search_read', [
       [
         ['parent_id', '=', false]
       ]
     ], {'fields': ['name', 'action', 'child_id'], 'order': 'sequence,id'}) as List;
+    return _menus(r);
+  }
+
+  /// Top-level menus whose name contains one of [keywords].
+  Future<List<MenuNode>> findRootMenus(List<String> keywords) async {
     final k = keywords.map((e) => e.toLowerCase()).toList();
-    return _menus(r.where((m) => k.any((w) => (m['name'] as String).toLowerCase().contains(w))).toList());
+    return (await rootMenus()).where((m) => k.any((w) => m.name.toLowerCase().contains(w))).toList();
   }
 
   Future<List<MenuNode>> menuChildren(int parentId) async {

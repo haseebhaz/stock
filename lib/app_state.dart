@@ -17,6 +17,8 @@ class AppState extends ChangeNotifier {
   String? savedDb, savedLogin;
   AccessRights rights = const AccessRights();
   bool soundEnabled = true;
+  int? bakeryRootId;
+  String? bakeryRootName;
   CountSession? count;
   final List<String> history = [];
 
@@ -29,6 +31,8 @@ class AppState extends ChangeNotifier {
     savedLogin = p.getString('login');
     lastWarehouseId = p.getInt('warehouse');
     soundEnabled = p.getBool('sound') ?? true;
+    bakeryRootId = p.getInt('bakery_id');
+    bakeryRootName = p.getString('bakery_name');
     count = CountSession.decode(p.getString('count'));
     final key = await _secure.read(key: 'key');
     if (savedDb != null && savedLogin != null && key != null) {
@@ -84,6 +88,21 @@ class AppState extends ChangeNotifier {
     await _secure.delete(key: 'key');
     loggedIn = false;
     warehouse = null;
+    notifyListeners();
+  }
+
+  /// Remembers which Odoo top-level menu is the bakery module (null = forget).
+  Future<void> setBakeryRoot(int? id, String? name) async {
+    bakeryRootId = id;
+    bakeryRootName = name;
+    final p = await SharedPreferences.getInstance();
+    if (id == null) {
+      await p.remove('bakery_id');
+      await p.remove('bakery_name');
+    } else {
+      await p.setInt('bakery_id', id);
+      await p.setString('bakery_name', name ?? '');
+    }
     notifyListeners();
   }
 

@@ -35,6 +35,17 @@ class SettingsScreen extends StatelessWidget {
             onChanged: state.setSound,
           ),
         ),
+        ListenableBuilder(
+          listenable: state,
+          builder: (_, __) => ListTile(
+            leading: const Icon(Icons.bakery_dining),
+            title: Text(state.bakeryRootName ?? 'Bakery menu: not chosen yet'),
+            subtitle: const Text('Odoo menu used for Caravan Bakery Suite'),
+            trailing: state.bakeryRootId == null
+                ? null
+                : TextButton(onPressed: () => state.setBakeryRoot(null, null), child: const Text('Reset')),
+          ),
+        ),
         const Divider(),
         _header(context, 'Account'),
         ListTile(leading: const Icon(Icons.person), title: Text(state.client.userName ?? '-'), subtitle: Text(state.savedLogin ?? '')),
