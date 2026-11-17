@@ -14,7 +14,11 @@ class AppState extends ChangeNotifier {
   List<Warehouse> warehouses = [];
   int? lastWarehouseId;
   String? savedDb, savedLogin;
+  AccessRights rights = const AccessRights();
   final List<String> history = [];
+
+  /// Updating is allowed unless Odoo says this user is not an Inventory Administrator.
+  bool get canAdjust => rights.canAdjust != false;
 
   Future<void> init() async {
     final p = await SharedPreferences.getInstance();
@@ -27,6 +31,7 @@ class AppState extends ChangeNotifier {
         await client.login(savedDb!, savedLogin!, key);
         loggedIn = true;
         await loadWarehouses();
+        rights = await client.accessRights();
         // Restored session: keep the last store if it still exists.
         warehouse = warehouses.where((w) => w.id == lastWarehouseId).firstOrNull;
       } catch (_) {
@@ -48,6 +53,7 @@ class AppState extends ChangeNotifier {
     loggedIn = true;
     warehouse = null; // store selection is mandatory after every explicit login
     await loadWarehouses();
+    rights = await client.accessRights();
     notifyListeners();
   }
 

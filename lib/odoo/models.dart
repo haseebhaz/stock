@@ -39,6 +39,24 @@ class StockResult {
   });
 }
 
+/// One row in a search-by-name result list.
+class ProductHit {
+  final int id;
+  final String name;
+  final String? barcode;
+  final String? reference;
+  final String uom;
+  final double onHand; // selected warehouse only
+  ProductHit(this.id, this.name, this.barcode, this.reference, this.uom, this.onHand);
+}
+
+/// What the logged-in Odoo user may do. null = could not be determined.
+class AccessRights {
+  final bool? canView; // Inventory > User
+  final bool? canAdjust; // Inventory > Administrator
+  const AccessRights({this.canView, this.canAdjust});
+}
+
 class OdooException implements Exception {
   final String message;
   OdooException(this.message);

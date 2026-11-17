@@ -43,6 +43,14 @@ class FakeOdoo {
           }];
         case 'stock.quant.search_read':
           result = [{'id': 1, 'quantity': 20.0}]; // 10 more sits in sub-locations
+        case 'product.product.search_read':
+          result = [
+            {'id': 5, 'name': 'Cola 330ml', 'barcode': '111', 'default_code': 'C1', 'uom_id': [1, 'Units'], 'qty_available': 30.0},
+            {'id': 6, 'name': 'Cola Zero', 'barcode': false, 'default_code': false, 'uom_id': [1, 'Units'], 'qty_available': 4.0},
+          ];
+        case 'res.users.has_group':
+          // Odoo variant that takes the group name only (acts on the current user)
+          result = a.first == 'stock.group_stock_manager' ? false : true;
         case 'stock.quant.create':
           result = [99];
         default:
@@ -112,5 +120,24 @@ void main() {
     final r = (await c.lookup('111', wh))!;
     expect(() => c.adjust(item: r, wh: wh, newQty: 5, reason: 'Miscount'),
         throwsA(isA<OdooException>())); // target would be -5
+  });
+
+  test('search by name returns hits and requires every word', () async {
+    final (c, f) = await loggedIn();
+    final hits = await c.searchByName('cola  zero', wh);
+    expect(hits.length, 2);
+    expect(hits[1].barcode, isNull);
+    final call = f.calls.lastWhere((x) => x['method'] == 'search_read' && x['model'] == 'product.product');
+    final domain = (call['args'] as List)[0] as List;
+    expect(domain.where((e) => e == '&').length, 1); // two words -> one AND
+    expect(call['kw']['context']['warehouse_id'], 3);
+    expect(await c.searchByName('   ', wh), isEmpty);
+  });
+
+  test('access rights: stock user yes, administrator no', () async {
+    final (c, _) = await loggedIn();
+    final r = await c.accessRights();
+    expect(r.canView, true);
+    expect(r.canAdjust, false);
   });
 }
