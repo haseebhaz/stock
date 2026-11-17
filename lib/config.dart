@@ -9,3 +9,7 @@ const List<String> kAdjustReasons = [
   'Expired / wasted',
   'Other',
 ];
+
+/// Shown in Menu > About. Keep in sync with `version:` in pubspec.yaml.
+const String kAppVersion = '1.2.0';
+const String kDeveloper = 'Haseeb Kakkodi';

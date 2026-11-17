@@ -22,6 +22,34 @@ class _AdjustScreenState extends State<AdjustScreen> {
 
   StockResult get it => widget.item;
 
+  @override
+  void initState() {
+    super.initState();
+    // Start from the current quantity so +1 / -1 work from what the system shows.
+    _qty.text = fmtQty(it.onHand);
+    _qty.selection = TextSelection(baseOffset: 0, extentOffset: _qty.text.length);
+  }
+
+  /// Changes the typed quantity by [delta] (in the selected unit), never below zero.
+  void _bump(double delta) {
+    final cur = double.tryParse(_qty.text.replaceAll(',', '.')) ?? 0;
+    final v = (cur + delta) < 0 ? 0.0 : cur + delta;
+    setState(() => _qty.text = fmtQty(v));
+  }
+
+  void _toggleUnit(bool packs) {
+    final p = it.packaging;
+    final cur = double.tryParse(_qty.text.replaceAll(',', '.'));
+    setState(() {
+      if (p != null && cur != null && packs != _inPacks) {
+        // Keep the same total when switching between units and packs.
+        final total = _inPacks ? cur * p.qty : cur;
+        _qty.text = fmtQty(packs ? total / p.qty : total);
+      }
+      _inPacks = packs;
+    });
+  }
+
   /// New total in base units, or null if the input is not a valid number.
   double? get _newTotal {
     final v = double.tryParse(_qty.text.replaceAll(',', '.'));
@@ -90,7 +118,7 @@ class _AdjustScreenState extends State<AdjustScreen> {
               ButtonSegment(value: true, label: Text('${p.name} (×${fmtQty(p.qty)})')),
             ],
             selected: {_inPacks},
-            onSelectionChanged: (s) => setState(() => _inPacks = s.first),
+            onSelectionChanged: (s) => _toggleUnit(s.first),
           ),
         const SizedBox(height: 16),
         TextField(
@@ -104,6 +132,13 @@ class _AdjustScreenState extends State<AdjustScreen> {
             border: const OutlineInputBorder(),
           ),
         ),
+        const SizedBox(height: 8),
+        Wrap(spacing: 8, children: [
+          for (final d in [-10.0, -1.0, 1.0, 10.0])
+            ActionChip(label: Text(d > 0 ? '+${fmtQty(d)}' : fmtQty(d)), onPressed: () => _bump(d)),
+          ActionChip(label: const Text('Set 0'), onPressed: () => setState(() => _qty.text = '0')),
+          ActionChip(label: const Text('Reset'), onPressed: () => setState(() => _qty.text = _inPacks && it.packaging != null ? fmtQty(it.onHand / it.packaging!.qty) : fmtQty(it.onHand))),
+        ]),
         const SizedBox(height: 16),
         DropdownButtonFormField<String>(
           value: _reason,

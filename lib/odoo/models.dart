@@ -3,7 +3,8 @@ class Warehouse {
   final String name;
   final String code;
   final int stockLocationId;
-  Warehouse(this.id, this.name, this.code, this.stockLocationId);
+  final int viewLocationId; // parent of all locations in the warehouse
+  Warehouse(this.id, this.name, this.code, this.stockLocationId, {this.viewLocationId = 0});
 }
 
 class Packaging {
@@ -37,6 +38,50 @@ class StockResult {
     required this.rackLocation,
     required this.tracked,
   });
+}
+
+/// One row in a search-by-name result list.
+class ProductHit {
+  final int id;
+  final String name;
+  final String? barcode;
+  final String? reference;
+  final String uom;
+  final double onHand; // selected warehouse only
+  ProductHit(this.id, this.name, this.barcode, this.reference, this.uom, this.onHand);
+}
+
+/// What the logged-in Odoo user may do. null = could not be determined.
+class AccessRights {
+  final bool? canView; // Inventory > User
+  final bool? canAdjust; // Inventory > Administrator
+  const AccessRights({this.canView, this.canAdjust});
+}
+
+/// On-hand quantity of one item in one warehouse.
+class StoreStock {
+  final String warehouse;
+  final double qty;
+  StoreStock(this.warehouse, this.qty);
+}
+
+/// Consumption of one item over a look-back window (for purchase planning).
+class ConsumptionRow {
+  final int productId;
+  final String name;
+  final String uom;
+  final double out; // quantity that left the store in the window
+  final double onHand;
+  final int days; // window length
+  ConsumptionRow(this.productId, this.name, this.uom, this.out, this.onHand, this.days);
+
+  double get perDay => out / days;
+  double get perWeek => perDay * 7;
+  double get perMonth => perDay * 30;
+  double get perYear => perDay * 365;
+
+  /// How many days the current stock lasts at the average rate (null = no consumption).
+  double? get coverDays => perDay > 0 ? onHand / perDay : null;
 }
 
 class OdooException implements Exception {

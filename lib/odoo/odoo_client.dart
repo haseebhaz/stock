@@ -95,10 +95,11 @@ class OdooClient {
 
   Future<List<Warehouse>> warehouses() async {
     final r = await _exec('stock.warehouse', 'search_read', [[]],
-        {'fields': ['name', 'code', 'lot_stock_id'], 'order': 'name'}) as List;
+        {'fields': ['name', 'code', 'lot_stock_id', 'view_location_id'], 'order': 'name'}) as List;
     return r
         .map((w) => Warehouse(
-            w['id'], w['name'], w['code'] ?? '', (w['lot_stock_id'] as List)[0]))
+            w['id'], w['name'], w['code'] ?? '', (w['lot_stock_id'] as List)[0],
+            viewLocationId: w['view_location_id'] is List ? (w['view_location_id'] as List)[0] : 0))
         .toList();
   }
 
@@ -128,7 +129,17 @@ class OdooClient {
       pack = Packaging(pk.first['id'], pk.first['name'], (pk.first['qty'] as num).toDouble());
       productId = (pk.first['product_id'] as List)[0] as int;
     }
+    return _result(productId, code, pack, wh);
+  }
 
+  /// Reloads an item (e.g. after an adjustment) keeping the scanned packaging.
+  Future<StockResult> refresh(StockResult old, Warehouse wh) =>
+      _result(old.productId, old.scannedCode, old.packaging, wh);
+
+  /// Opens an item picked from a name-search list.
+  Future<StockResult> byProductId(int id, Warehouse wh) => _result(id, '', null, wh);
+
+  Future<StockResult> _result(int productId, String code, Packaging? pack, Warehouse wh) async {
     final fields = [
       'name', 'uom_id', 'barcode', 'tracking', 'qty_available', 'free_qty',
       if (rackField != null) rackField!,
@@ -154,6 +165,119 @@ class OdooClient {
       available: (d['free_qty'] as num).toDouble(),
       rackLocation: rack,
       tracked: (d['tracking'] ?? 'none') != 'none',
+    );
+  }
+
+  /// Search by item name (every typed word must appear) or internal reference.
+  Future<List<ProductHit>> searchByName(String query, Warehouse wh) async {
+    final words = query.trim().split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+    if (words.isEmpty) return [];
+    final conds = [for (final w in words) ['name', 'ilike', w]];
+    final domain = [
+      '|',
+      ['default_code', 'ilike', query.trim()],
+      ...List.filled(conds.length - 1, '&'),
+      ...conds,
+    ];
+    final r = await _exec('product.product', 'search_read', [domain], {
+      'fields': ['name', 'barcode', 'default_code', 'uom_id', 'qty_available'],
+      'limit': 30,
+      'order': 'name',
+      'context': {'warehouse_id': wh.id},
+    }) as List;
+    return r
+        .map((d) => ProductHit(
+              d['id'],
+              d['name'],
+              d['barcode'] is String ? d['barcode'] : null,
+              d['default_code'] is String ? d['default_code'] : null,
+              (d['uom_id'] as List)[1],
+              (d['qty_available'] as num).toDouble(),
+            ))
+        .toList();
+  }
+
+  // ---- Other stores ------------------------------------------------------
+
+  /// On-hand quantity of one item in every warehouse (read-only).
+  Future<List<StoreStock>> stockInAllStores(int productId, List<Warehouse> all) {
+    return Future.wait(all.map((w) async {
+      final r = await _exec('product.product', 'read', [
+        [productId],
+        ['qty_available']
+      ], {'context': {'warehouse_id': w.id}}) as List;
+      return StoreStock(w.name, ((r.first as Map)['qty_available'] as num).toDouble());
+    }));
+  }
+
+  // ---- Dashboard ---------------------------------------------------------
+
+  static String _odooDate(DateTime d) {
+    String t(int n) => n.toString().padLeft(2, '0');
+    return '${d.year}-${t(d.month)}-${t(d.day)} ${t(d.hour)}:${t(d.minute)}:${t(d.second)}';
+  }
+
+  /// Items that left the store (to customers or to production) in the last
+  /// [days] days, fastest-moving first, with the current stock for each.
+  Future<List<ConsumptionRow>> consumption(Warehouse wh, int days, {int limit = 100}) async {
+    if (wh.viewLocationId == 0) throw OdooException('Store location is unknown.');
+    final from = DateTime.now().toUtc().subtract(Duration(days: days));
+    final domain = [
+      ['state', '=', 'done'],
+      ['date', '>=', _odooDate(from)],
+      ['location_id', 'child_of', wh.viewLocationId],
+      ['location_dest_id.usage', 'in', ['customer', 'production']],
+    ];
+    final groups = await _exec('stock.move', 'read_group', [
+      domain,
+      ['product_qty:sum'],
+      ['product_id']
+    ], {'orderby': 'product_qty desc', 'limit': limit, 'lazy': false}) as List;
+    if (groups.isEmpty) return [];
+    final ids = [for (final g in groups) (g['product_id'] as List)[0] as int];
+    final prods = await _exec('product.product', 'read', [
+      ids,
+      ['name', 'uom_id', 'qty_available']
+    ], {'context': {'warehouse_id': wh.id}}) as List;
+    final byId = {for (final p in prods) p['id'] as int: p};
+    return [
+      for (final g in groups)
+        if (byId[(g['product_id'] as List)[0]] != null)
+          ConsumptionRow(
+            (g['product_id'] as List)[0],
+            byId[(g['product_id'] as List)[0]]['name'],
+            (byId[(g['product_id'] as List)[0]]['uom_id'] as List)[1],
+            (g['product_qty'] as num).toDouble(),
+            (byId[(g['product_id'] as List)[0]]['qty_available'] as num).toDouble(),
+            days,
+          ),
+    ];
+  }
+
+  // ---- Access rights -----------------------------------------------------
+
+  /// Reads what the logged-in user may do in Odoo's Inventory app.
+  Future<AccessRights> accessRights() async {
+    Future<bool?> has(String group) async {
+      for (final args in [
+        [group],
+        [
+          [uid],
+          group
+        ]
+      ]) {
+        try {
+          return (await _exec('res.users', 'has_group', args)) == true;
+        } catch (_) {}
+      }
+      return null;
+    }
+
+    final manager = await has('stock.group_stock_manager');
+    final user = await has('stock.group_stock_user');
+    return AccessRights(
+      canView: (user == null && manager == null) ? null : (user == true || manager == true),
+      canAdjust: manager,
     );
   }
 
