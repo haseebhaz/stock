@@ -48,17 +48,36 @@ class AppDrawer extends StatelessWidget {
               final messenger = ScaffoldMessenger.of(context);
               nav.pop();
               try {
-                final roots = await state.client.findRootMenus(kBakeryMenuKeywords);
-                if (roots.isEmpty) {
-                  messenger.showSnackBar(const SnackBar(content: Text('No bakery menu found for your Odoo user.')));
+                if (state.bakeryRootId != null) {
+                  nav.push(MaterialPageRoute(
+                      builder: (_) => OdooMenuScreen(
+                          state: state, menuId: state.bakeryRootId!, title: state.bakeryRootName ?? 'Caravan Bakery Suite')));
                   return;
                 }
-                nav.push(MaterialPageRoute(
-                    builder: (_) => roots.length == 1
-                        ? OdooMenuScreen(state: state, menuId: roots.first.id, title: roots.first.name)
-                        : _RootPicker(state: state, roots: roots)));
+                final all = await state.client.rootMenus();
+                if (all.isEmpty) {
+                  messenger.showSnackBar(const SnackBar(
+                      content: Text('Your Odoo user can see no menus. Ask an Odoo administrator to check your access.')));
+                  return;
+                }
+                final k = kBakeryMenuKeywords;
+                final match = all.where((m) => k.any((w) => m.name.toLowerCase().contains(w))).toList();
+                if (match.length == 1) {
+                  await state.setBakeryRoot(match.first.id, match.first.name);
+                  nav.push(MaterialPageRoute(
+                      builder: (_) => OdooMenuScreen(state: state, menuId: match.first.id, title: match.first.name)));
+                } else {
+                  nav.push(MaterialPageRoute(
+                      builder: (_) => _RootPicker(
+                            state: state,
+                            roots: match.isEmpty ? all : match,
+                            note: match.isEmpty
+                                ? 'No menu with "bakery" in its name was found. These are all the Odoo menus your user can see. Pick the bakery module:'
+                                : 'Several menus match. Pick the bakery module:',
+                          )));
+                }
               } catch (e) {
-                messenger.showSnackBar(SnackBar(content: Text('$e')));
+                messenger.showSnackBar(SnackBar(content: Text('Could not read Odoo menus: $e')));
               }
             },
           ),
@@ -95,22 +114,28 @@ class AppDrawer extends StatelessWidget {
   }
 }
 
-/// Shown only if several top-level menus match the bakery keywords.
+/// Lets the user pick the bakery module's top-level Odoo menu; the choice is remembered.
 class _RootPicker extends StatelessWidget {
   final AppState state;
   final List<MenuNode> roots;
-  const _RootPicker({required this.state, required this.roots});
+  final String note;
+  const _RootPicker({required this.state, required this.roots, required this.note});
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('Caravan Bakery Suite')),
+        appBar: AppBar(title: const Text('Choose bakery menu')),
         body: ListView(children: [
+          Padding(padding: const EdgeInsets.all(16), child: Text(note)),
           for (final r in roots)
             ListTile(
               leading: const Icon(Icons.folder_open),
               title: Text(r.name),
-              onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => OdooMenuScreen(state: state, menuId: r.id, title: r.name))),
+              onTap: () async {
+                await state.setBakeryRoot(r.id, r.name);
+                if (!context.mounted) return;
+                Navigator.of(context).pushReplacement(
+                    MaterialPageRoute(builder: (_) => OdooMenuScreen(state: state, menuId: r.id, title: r.name)));
+              },
             ),
         ]),
       );

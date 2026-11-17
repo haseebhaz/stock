@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../app_state.dart';
 import '../count/count_session.dart';
+import '../odoo/models.dart';
 import '../scan_feedback.dart';
 import 'camera_scan_screen.dart';
 import 'count_review_screen.dart';
@@ -20,6 +21,8 @@ class _CountScreenState extends State<CountScreen> {
   final _focus = FocusNode();
   String? _message;
   bool _busy = false;
+  bool _softKeyboard = false;
+  List<ProductHit> _hits = [];
 
   AppState get st => widget.state;
   CountSession? get session => st.count;
@@ -32,6 +35,28 @@ class _CountScreenState extends State<CountScreen> {
     setState(() {});
   }
 
+  /// Adds one scan/tap of [r] to the count. Returns false if the item cannot be counted.
+  Future<void> _addResult(StockResult r) async {
+    if (r.tracked) {
+      await ScanFeedback.notFound(st.soundEnabled);
+      setState(() => _message = '${r.name}: lot/serial items are not supported.');
+      return;
+    }
+    // A pack barcode counts the whole pack, an item barcode (or a name pick) counts 1.
+    final line = session!.add(
+      productId: r.productId,
+      name: r.name,
+      uom: r.uom,
+      barcode: r.itemBarcode,
+      systemQty: r.onHand,
+      step: r.packaging?.qty ?? 1,
+    );
+    await st.saveCount();
+    await ScanFeedback.found(st.soundEnabled);
+    setState(() => _message = '${line.name}: ${fmtQty(line.counted)} ${line.uom}');
+  }
+
+  /// Barcode first; if no barcode matches, search item names.
   Future<void> _onScan(String code) async {
     code = code.trim();
     _scan.clear();
@@ -39,29 +64,38 @@ class _CountScreenState extends State<CountScreen> {
     setState(() {
       _busy = true;
       _message = null;
+      _hits = [];
     });
     try {
       final r = await st.client.lookup(code, st.warehouse!);
-      if (r == null) {
-        await ScanFeedback.notFound(st.soundEnabled);
-        setState(() => _message = 'Barcode not found: $code');
-      } else if (r.tracked) {
-        await ScanFeedback.notFound(st.soundEnabled);
-        setState(() => _message = '${r.name}: lot/serial items are not supported.');
+      if (r != null) {
+        await _addResult(r);
       } else {
-        // A pack barcode counts the whole pack, an item barcode counts 1.
-        final line = session!.add(
-          productId: r.productId,
-          name: r.name,
-          uom: r.uom,
-          barcode: r.itemBarcode,
-          systemQty: r.onHand,
-          step: r.packaging?.qty ?? 1,
-        );
-        await st.saveCount();
-        await ScanFeedback.found(st.soundEnabled);
-        setState(() => _message = '${line.name}: ${fmtQty(line.counted)} ${line.uom}');
+        final hits = await st.client.searchByName(code, st.warehouse!);
+        if (hits.isEmpty) {
+          await ScanFeedback.notFound(st.soundEnabled);
+          setState(() => _message = 'No item found for: $code');
+        } else if (hits.length == 1) {
+          await _addResult(await st.client.byProductId(hits.first.id, st.warehouse!));
+        } else {
+          setState(() => _hits = hits);
+        }
       }
+    } catch (e) {
+      setState(() => _message = '$e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+      _focus.requestFocus();
+    }
+  }
+
+  Future<void> _pickHit(ProductHit h) async {
+    setState(() {
+      _busy = true;
+      _hits = [];
+    });
+    try {
+      await _addResult(await st.client.byProductId(h.id, st.warehouse!));
     } catch (e) {
       setState(() => _message = '$e');
     } finally {
@@ -172,19 +206,45 @@ class _CountScreenState extends State<CountScreen> {
           controller: _scan,
           focusNode: _focus,
           autofocus: true,
-          keyboardType: TextInputType.none,
+          keyboardType: _softKeyboard ? TextInputType.text : TextInputType.none,
+          textInputAction: TextInputAction.search,
           onSubmitted: _onScan,
           decoration: InputDecoration(
-            labelText: 'Scan item',
+            labelText: 'Scan barcode or search item name',
             border: const OutlineInputBorder(),
-            suffixIcon: IconButton(icon: const Icon(Icons.photo_camera), tooltip: 'Camera scan', onPressed: _camera),
+            suffixIcon: Row(mainAxisSize: MainAxisSize.min, children: [
+              IconButton(icon: const Icon(Icons.photo_camera), tooltip: 'Camera scan', onPressed: _camera),
+              IconButton(icon: const Icon(Icons.search), tooltip: 'Search', onPressed: () => _onScan(_scan.text)),
+              IconButton(
+                tooltip: 'Type manually',
+                icon: Icon(_softKeyboard ? Icons.keyboard_hide : Icons.keyboard),
+                onPressed: () {
+                  setState(() => _softKeyboard = !_softKeyboard);
+                  _focus.unfocus();
+                  _focus.requestFocus();
+                },
+              ),
+            ]),
           ),
         ),
         if (_busy) const LinearProgressIndicator(),
         if (_message != null) Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Text(_message!, style: const TextStyle(fontSize: 16))),
         Expanded(
-          child: lines.isEmpty
-              ? const Center(child: Text('Scan the first item.'))
+          child: _hits.isNotEmpty
+              ? ListView(children: [
+                  Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Text('${_hits.length} items found, tap one to count it:')),
+                  for (final h in _hits)
+                    Card(
+                      child: ListTile(
+                        title: Text(h.name),
+                        subtitle: Text([if (h.reference != null) h.reference!, if (h.barcode != null) h.barcode!].join(' · ')),
+                        trailing: Text('${fmtQty(h.onHand)} ${h.uom}'),
+                        onTap: () => _pickHit(h),
+                      ),
+                    ),
+                ])
+              : lines.isEmpty
+              ? const Center(child: Text('Scan the first item, or type a name.'))
               : ListView.separated(
                   itemCount: lines.length,
                   separatorBuilder: (_, __) => const Divider(height: 1),

@@ -11,7 +11,7 @@ const List<String> kAdjustReasons = [
 ];
 
 /// Shown in Menu > About. Keep in sync with `version:` in pubspec.yaml.
-const String kAppVersion = '1.3.0';
+const String kAppVersion = '1.3.1';
 const String kDeveloper = 'Haseeb Kakkodi';
 
 /// Words used to find the bakery module's top-level menu in Odoo.
